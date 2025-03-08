@@ -5,8 +5,74 @@
 #include <opencv2/imgcodecs.hpp>
 #include <random>
 #include <string>
+#include <SFML/Window.hpp>
+#include <SFML/Graphics.hpp>
+#include <format>
 
-void Detector(YOLO_V8*& p) {
+enum TrafficLight {
+	Green,
+	Yellow,
+	Red
+};
+
+struct Model {
+	TrafficLight traffic_light;
+	int vehicle_points;
+	int pedestrian_points;
+	int time;
+	sf::Font font;
+	int automobiles = 0;
+	int bikes = 0;
+	int buses = 0;
+	int cars = 0;
+	int trucks = 0;
+};
+
+void renderTrafficLight(sf::RenderWindow& window, Model& app) {
+	window.clear(sf::Color::Black);
+
+	sf::Text text(app.font);
+	text.setString(std::format("vehicle points: {}", app.vehicle_points));
+	text.setCharacterSize(16);
+	window.draw(text);
+
+	sf::RectangleShape green;
+	green.setPosition({0, 50});
+	green.setSize(sf::Vector2f(300, 200));
+	green.setOutlineThickness(10);
+	green.setOutlineColor(sf::Color::Black);
+	green.setFillColor(sf::Color::Green);
+
+	sf::RectangleShape yellow;
+	yellow.setPosition({0, 250});
+	yellow.setSize(sf::Vector2f(300, 200));
+	yellow.setOutlineColor(sf::Color::Black);
+	yellow.setOutlineThickness(10);
+	yellow.setFillColor(sf::Color::Yellow);
+
+	sf::RectangleShape red;
+	red.setPosition({0, 450});
+	red.setSize(sf::Vector2f(300, 200));
+	red.setOutlineColor(sf::Color::Black);
+	red.setOutlineThickness(10);
+	red.setFillColor(sf::Color::Red);
+
+	switch (app.traffic_light) {
+		case Green:
+			window.draw(green);
+			break;
+		case Yellow:
+			window.draw(yellow);
+			break;
+		case Red:
+			window.draw(red);
+			break;
+	}
+
+	window.display();
+}
+
+void Detector(YOLO_V8*& p, sf::RenderWindow& traffic_light_window, Model& app) {
 	cv::Mat frame;
 	cv::VideoCapture cap;
 	// open the default camera using default API
@@ -14,10 +80,9 @@ void Detector(YOLO_V8*& p) {
 	// OR advance usage: select any API backend
 	int apiID = cv::CAP_ANY;      // 0 = autodetect default API
 	// open selected camera using selected API
-	
-	cap.open(1);
-	//cap.open(std::string(ASSETS) + "/video.mp4", apiID);
-	
+
+	cap.open(std::string(ASSETS) + "/video.mp4", apiID);
+
 	// check if we succeeded
 	if (!cap.isOpened()) {
 		std::cerr << "ERROR! Unable to open camera\n";
@@ -42,6 +107,12 @@ void Detector(YOLO_V8*& p) {
 			std::cout << res.size() << std::endl;
 		}
 
+		app.automobiles = 0;
+		app.bikes = 0;
+		app.buses = 0;
+		app.cars = 0;
+		app.trucks = 0;
+
 		for (auto& re : res)
 		{
 			cv::RNG rng(cv::getTickCount());
@@ -53,6 +124,24 @@ void Detector(YOLO_V8*& p) {
 			std::cout << std::fixed << std::setprecision(2);
 			std::string label = p->classes[re.classId] + " " +
 				std::to_string(confidence).substr(0, std::to_string(confidence).size() - 4);
+
+			switch (re.classId) {
+				case 1:
+					app.automobiles++;
+					break;
+				case 2:
+					app.bikes++;
+					break;
+				case 3:
+					app.buses++;
+					break;
+				case 4:
+					app.cars++;
+					break;
+				case 5:
+					app.trucks++;
+					break;
+			}
 
 			cv::rectangle(
 				frame,
@@ -76,6 +165,29 @@ void Detector(YOLO_V8*& p) {
 		}
 
 		cv::imshow("Live",frame);
+
+		// check all the window's events that were triggered since the last iteration of the loop
+		while (const std::optional event = traffic_light_window.pollEvent())
+		{
+			// "close requested" event: we close the window
+			if (event->is<sf::Event::Closed>())
+				traffic_light_window.close();
+		}
+
+		app.vehicle_points =
+			(app.automobiles * 5) +
+			(app.bikes * 5) +
+			(app.buses * 10) +
+			(app.cars * 5) +
+			(app.trucks * 5);
+
+		if (app.vehicle_points < 30) {
+			app.traffic_light = Red;
+		} else {
+			app.traffic_light = Green;
+		}
+
+		renderTrafficLight(traffic_light_window, app);
 
 		if (cv::waitKey(1) != -1)
 		{
@@ -137,7 +249,7 @@ int ReadCocoYaml(YOLO_V8*& p) {
 }
 
 
-void DetectTest()
+void run(sf::RenderWindow& traffic_light_window, Model& app)
 {
 	YOLO_V8* yoloDetector = new YOLO_V8;
 	ReadCocoYaml(yoloDetector);
@@ -163,7 +275,7 @@ void DetectTest()
 #endif
 	std::cout << params.modelType << std::endl;
 	yoloDetector->CreateSession(params);
-	Detector(yoloDetector);
+	Detector(yoloDetector, traffic_light_window, app);
 }
 
 
@@ -177,8 +289,15 @@ void ClsTest()
 	Classifier(yoloDetector);
 }
 
-
 int main()
 {
-	DetectTest();
+	Model app;
+	sf::RenderWindow traffic_light_window(sf::VideoMode({300, 650}), "My window");
+	app.traffic_light = Green;
+	sf::Font font(std::string(ASSETS) + "/font.ttf");
+	app.font = font;
+
+	run(traffic_light_window, app);
+
+	return 0;
 }

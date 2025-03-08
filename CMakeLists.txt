@@ -4,7 +4,7 @@ project(
   VERSION 1.0
   LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # OPEN CV
@@ -62,6 +62,8 @@ set(PROJECT_SOURCES
 
 add_executable(${PROJECT_NAME} ${PROJECT_SOURCES})
 
+find_package(SFML 3 REQUIRED COMPONENTS Graphics Audio Network)
+
 if (WIN32)
     target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS} ${ONNXRUNTIME_ROOT}/lib/onnxruntime.lib)
     if (USE_CUDA)
@@ -73,7 +75,7 @@ elseif (LINUX)
         target_link_libraries(${PROJECT_NAME} ${CUDA_LIBRARIES})
     endif ()
 elseif (APPLE)
-    target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS} ${ONNXRUNTIME_ROOT}/lib/libonnxruntime.dylib)
+    target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS} ${ONNXRUNTIME_ROOT}/lib/libonnxruntime.dylib SFML::Graphics SFML::Audio SFML::Network)
 endif ()
 
 # For windows system, copy onnxruntime.dll to the same folder of the executable file
