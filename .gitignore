@@ -12,4 +12,4 @@ _deps
 CMakeUserPresets.json
 /dependencies
 /.cache
-/dependencies
+/assets

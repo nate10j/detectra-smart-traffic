@@ -1,3 +1,4 @@
+#include <cmath>
 #include <iostream>
 #include <iomanip>
 #include "inference.h"
@@ -8,6 +9,7 @@
 #include <SFML/Window.hpp>
 #include <SFML/Graphics.hpp>
 #include <format>
+#include <vector>
 #include "model.h"
 
 void renderTrafficLight(sf::RenderWindow& window, Model& app) {
@@ -18,35 +20,48 @@ void renderTrafficLight(sf::RenderWindow& window, Model& app) {
 	text.setCharacterSize(24);
 	window.draw(text);
 
+	sf::Text text2(app.font);
+	text2.setPosition({0, 30});
+	text2.setString(std::format("pedestrian points: {}", app.pedestrian_points));
+	text2.setCharacterSize(24);
+	window.draw(text2);
+
 	sf::RectangleShape green;
-	green.setPosition({0, 50});
+	green.setPosition({0, 75});
 	green.setSize(sf::Vector2f(300, 200));
 	green.setOutlineThickness(10);
 	green.setOutlineColor(sf::Color::Black);
 	green.setFillColor(sf::Color::Green);
 
 	sf::RectangleShape yellow;
-	yellow.setPosition({0, 250});
+	yellow.setPosition({0, 275});
 	yellow.setSize(sf::Vector2f(300, 200));
 	yellow.setOutlineColor(sf::Color::Black);
 	yellow.setOutlineThickness(10);
 	yellow.setFillColor(sf::Color::Yellow);
 
 	sf::RectangleShape red;
-	red.setPosition({0, 450});
+	red.setPosition({0, 475});
 	red.setSize(sf::Vector2f(300, 200));
 	red.setOutlineColor(sf::Color::Black);
 	red.setOutlineThickness(10);
 	red.setFillColor(sf::Color::Red);
 
+	sf::Sprite pedestrian_light(app.texture);
+	pedestrian_light.setPosition({220, 100});
+	
 	switch (app.traffic_light) {
 		case Green:
+			pedestrian_light.setTextureRect(sf::IntRect({20, 20}, {380, 225}));
+			window.draw(pedestrian_light);
 			window.draw(green);
 			break;
 		case Yellow:
 			window.draw(yellow);
 			break;
 		case Red:
+			pedestrian_light.setTextureRect(sf::IntRect({20, 250}, {380, 425}));
+			window.draw(pedestrian_light);
 			window.draw(red);
 			break;
 	}
@@ -54,9 +69,11 @@ void renderTrafficLight(sf::RenderWindow& window, Model& app) {
 	window.display();
 }
 
-void Detector(YOLO_V8*& p, sf::RenderWindow& traffic_light_window, Model& app) {
+void Detector(YOLO_V8*& car_p, YOLO_V8*& pedestrian_p, sf::RenderWindow& traffic_light_window, Model& app) {
 	cv::Mat frame;
+	cv::Mat framePedestrian;
 	cv::VideoCapture cap;
+	cv::VideoCapture capPedestrian;
 	// open the default camera using default API
 	// cap.open(0);
 	// OR advance usage: select any API backend
@@ -64,16 +81,22 @@ void Detector(YOLO_V8*& p, sf::RenderWindow& traffic_light_window, Model& app) {
 	// open selected camera using selected API
 
 	cap.open(std::string(ASSETS) + "/video.mp4", apiID);
+	capPedestrian.open(std::string(ASSETS) + "/pedestrian.mp4", apiID);
 
 	// check if we succeeded
 	if (!cap.isOpened()) {
-		std::cerr << "ERROR! Unable to open camera\n";
+		std::cerr << "ERROR! Unable to open camera for vehicles\n";
+	}
+	if (!capPedestrian.isOpened()) {
+		std::cerr << "ERROR! Unable to open camera for pedestrians\n";
 	}
 
 	for (;;) {
 		cap.read(frame);
+		capPedestrian.read(framePedestrian);
 		// frame = cv::imread(std::string(ASSETS) + "/image.jpg");
 
+		// vehicles
 		if (frame.empty()) {
 			std::cerr << "Error: frame empty" << std::endl;
 			return;
@@ -81,7 +104,7 @@ void Detector(YOLO_V8*& p, sf::RenderWindow& traffic_light_window, Model& app) {
 
 
 		std::vector<DL_RESULT> res;
-		p->RunSession(frame, res);
+		car_p->RunSession(frame, res);
 
 		if (res.empty()) {
 			std::cout << "no objects detected" << std::endl;
@@ -104,7 +127,7 @@ void Detector(YOLO_V8*& p, sf::RenderWindow& traffic_light_window, Model& app) {
 
 			float confidence = floor(100 * re.confidence) / 100;
 			std::cout << std::fixed << std::setprecision(2);
-			std::string label = p->classes[re.classId] + " " +
+			std::string label = car_p->classes[re.classId] + " " +
 				std::to_string(confidence).substr(0, std::to_string(confidence).size() - 4);
 
 			switch (re.classId) {
@@ -148,6 +171,58 @@ void Detector(YOLO_V8*& p, sf::RenderWindow& traffic_light_window, Model& app) {
 
 		cv::imshow("Live",frame);
 
+		// pedestrian detect
+		
+		app.pedestrians = 0;
+
+		cv::Mat img = framePedestrian.clone();
+
+		std::vector<DL_RESULT> pedestrian_res;
+		pedestrian_p->RunSession(img, pedestrian_res);
+
+		if (pedestrian_res.empty()) {
+			std::cout << "no objects detected" << std::endl;
+		} else {
+			std::cout << pedestrian_res.size() << std::endl;
+		}
+
+		for (auto& re : pedestrian_res)
+		{
+			app.pedestrians++;
+			cv::RNG rng(cv::getTickCount());
+			cv::Scalar color(rng.uniform(0, 256), rng.uniform(0, 256), rng.uniform(0, 256));
+
+			cv::rectangle(img, re.box, color, 3);
+
+			float confidence = floor(100 * re.confidence) / 100;
+			std::cout << std::fixed << std::setprecision(2);
+			std::string label = pedestrian_p->classes[re.classId] + " " +
+				std::to_string(confidence).substr(0, std::to_string(confidence).size() - 4);
+
+			cv::rectangle(
+				img,
+				cv::Point(re.box.x, re.box.y - 25),
+				cv::Point(re.box.x + label.length() * 15, re.box.y),
+				color,
+				cv::FILLED
+			);
+
+			cv::putText(
+				img,
+				label,
+				cv::Point(re.box.x, re.box.y - 5),
+				cv::FONT_HERSHEY_SIMPLEX,
+				0.75,
+				cv::Scalar(0, 0, 0),
+				2
+			);
+		}
+
+
+		/// Show
+		resize(img, img, cv::Size(854, 480));
+		imshow("detected person", img);
+
 		// check all the window's events that were triggered since the last iteration of the loop
 		while (const std::optional event = traffic_light_window.pollEvent())
 		{
@@ -163,9 +238,13 @@ void Detector(YOLO_V8*& p, sf::RenderWindow& traffic_light_window, Model& app) {
 			(app.cars * 5) +
 			(app.trucks * 5);
 
-		if (app.vehicle_points < 30) {
+		app.pedestrian_points = app.pedestrians * 10;
+
+		if (abs(app.vehicle_points - app.pedestrian_points) <= 5) {
+			app.traffic_light = Yellow;
+		} else if (app.pedestrian_points > app.vehicle_points) {
 			app.traffic_light = Red;
-		} else {
+		} else if (app.pedestrian_points < app.vehicle_points) {
 			app.traffic_light = Green;
 		}
 
@@ -208,76 +287,56 @@ void Classifier(YOLO_V8*& p)
 	//cv::imwrite("E:\\output\\" + std::to_string(k) + ".png", img);
 }
 
-int ReadCocoYaml(YOLO_V8*& p) {
-	// Open the YAML file
-	std::ifstream file(std::string(ASSETS) + "/data.yaml");
-	if (!file.is_open())
-	{
-		std::cerr << "Failed to open file" << std::endl;
-		return 1;
-	}
-
-	std::ifstream classes_file(std::string(ASSETS) + "/classes.txt");
-	std::cout << std::string(ASSETS) + "/classes.txt" << std::endl;
-	// Extract the names
-	std::vector<std::string> classes;
-	std::string line;
-	while (std::getline(classes_file, line)) {
-		classes.push_back(line);
-	}
-
-	p->classes = classes;
-	return 0;
-}
-
-
 void run(sf::RenderWindow& traffic_light_window, Model& app)
 {
-	YOLO_V8* yoloDetector = new YOLO_V8;
-	ReadCocoYaml(yoloDetector);
-	DL_INIT_PARAM params;
-	params.rectConfidenceThreshold = 0.5;
-	params.iouThreshold = 0.45;
-	params.modelPath = std::string(ASSETS) + "/best.onnx";
-	params.imgSize = { 640, 640 };
+	YOLO_V8* carsDetector = new YOLO_V8;
+	YOLO_V8* pedestrianDetector = new YOLO_V8;
+	carsDetector->classes = std::vector<std::string> {"auto", "bike", "bus", "car", "truck"};
+	pedestrianDetector->classes = std::vector<std::string> {"person", "paralyzed", "blind"};
+	DL_INIT_PARAM cars_params;
+	DL_INIT_PARAM pedestrian_params;
+	cars_params.rectConfidenceThreshold = 0.37;
+	cars_params.iouThreshold = 0.45;
+	cars_params.modelPath = std::string(ASSETS) + "/car.onnx";
+	cars_params.imgSize = { 640, 640 };
+
+	pedestrian_params.rectConfidenceThreshold = 0.05;
+	pedestrian_params.iouThreshold = 0.45;
+	pedestrian_params.modelPath = std::string(ASSETS) + "/pedestrian.onnx";
+	pedestrian_params.imgSize = { 640, 640 };
 #ifdef USE_CUDA
-	params.cudaEnable = true;
+	cars_params.cudaEnable = true;
 
 	// GPU FP32 inference
-	params.modelType = YOLO_DETECT_V8;
+	cars_params.modelType = YOLO_DETECT_V8;
 	// GPU FP16 inference
 	//Note: change fp16 onnx model
-	//params.modelType = YOLO_DETECT_V8_HALF;
+	//cars_params.modelType = YOLO_DETECT_V8_HALF;
 
 #else
 	// CPU inference
-	params.modelType = YOLO_DETECT_V8;
-	params.cudaEnable = false;
+	cars_params.modelType = YOLO_DETECT_V8;
+	cars_params.cudaEnable = false;
 
+	pedestrian_params.modelType = YOLO_DETECT_V8;
+	pedestrian_params.cudaEnable = false;
 #endif
-	std::cout << params.modelType << std::endl;
-	yoloDetector->CreateSession(params);
-	Detector(yoloDetector, traffic_light_window, app);
+	std::cout << cars_params.modelType << std::endl;
+	carsDetector->CreateSession(cars_params);
+	pedestrianDetector->CreateSession(pedestrian_params);
+	Detector(carsDetector, pedestrianDetector, traffic_light_window, app);
 }
 
-
-void ClsTest()
-{
-	YOLO_V8* yoloDetector = new YOLO_V8;
-	std::string model_path = std::string(ASSETS) + "/best.onnx";
-	ReadCocoYaml(yoloDetector);
-	DL_INIT_PARAM params{ model_path, YOLO_CLS, {640, 640} };
-	yoloDetector->CreateSession(params);
-	Classifier(yoloDetector);
-}
 
 int main()
 {
 	Model app;
-	sf::RenderWindow traffic_light_window(sf::VideoMode({300, 650}), "My window");
+	sf::RenderWindow traffic_light_window(sf::VideoMode({600, 675}), "My window");
 	app.traffic_light = Green;
 	sf::Font font(std::string(ASSETS) + "/font.ttf");
 	app.font = font;
+	sf::Texture texture(std::string(ASSETS) + "/pedestrian-light.jpg");
+	app.texture = texture;
 
 	run(traffic_light_window, app);
 

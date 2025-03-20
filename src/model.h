@@ -17,4 +17,6 @@ struct Model {
 	int buses = 0;
 	int cars = 0;
 	int trucks = 0;
+	int pedestrians = 0;
+	sf::Texture texture;
 };
