@@ -256,7 +256,7 @@ void run(sf::RenderWindow& traffic_light_window, Model& app)
 	cars_params.modelPath = std::string(ASSETS) + "/car.onnx";
 	cars_params.imgSize = { 640, 640 };
 
-	pedestrian_params.rectConfidenceThreshold = 0.05;
+	pedestrian_params.rectConfidenceThreshold = 0.02;
 	pedestrian_params.iouThreshold = 0.45;
 	pedestrian_params.modelPath = std::string(ASSETS) + "/pedestrian.onnx";
 	pedestrian_params.imgSize = { 640, 640 };
@@ -316,6 +316,15 @@ void traffic_light_sequence(Model* app) {
 		std::this_thread::sleep_for(std::chrono::seconds(waitingTime));
 		app->traffic_light = Yellow;
 		std::this_thread::sleep_for(std::chrono::seconds(2));
+
+		app->vehicle_points =
+			(app->automobiles * 5) +
+			(app->bikes * 5) +
+			(app->buses * 10) +
+			(app->cars * 5) +
+			(app->trucks * 5);
+
+		app->pedestrian_points = app->pedestrians * 10;
 
 		if (abs(app->vehicle_points - app->pedestrian_points) <= 5) {
 			// around the same range
