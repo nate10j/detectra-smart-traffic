@@ -1,5 +1,5 @@
-#include <cmath>
-#include <iostream>
+#include <chrono>
+#include <cmath> #include <iostream>
 #include <iomanip>
 #include "inference.h"
 #include <fstream>
@@ -9,6 +9,7 @@
 #include <SFML/Window.hpp>
 #include <SFML/Graphics.hpp>
 #include <format>
+#include <thread>
 #include <vector>
 #include "model.h"
 
@@ -16,13 +17,13 @@ void renderTrafficLight(sf::RenderWindow& window, Model& app) {
 	window.clear(sf::Color::Black);
 
 	sf::Text text(app.font);
-	text.setString(std::format("vehicle points: {}", app.vehicle_points));
+	text.setString(std::format("vehicle score: {}", app.vehicle_points));
 	text.setCharacterSize(24);
 	window.draw(text);
 
 	sf::Text text2(app.font);
 	text2.setPosition({0, 30});
-	text2.setString(std::format("pedestrian points: {}", app.pedestrian_points));
+	text2.setString(std::format("pedestrian score: {}", app.pedestrian_points));
 	text2.setCharacterSize(24);
 	window.draw(text2);
 
@@ -231,23 +232,6 @@ void Detector(YOLO_V8*& car_p, YOLO_V8*& pedestrian_p, sf::RenderWindow& traffic
 				traffic_light_window.close();
 		}
 
-		app.vehicle_points =
-			(app.automobiles * 5) +
-			(app.bikes * 5) +
-			(app.buses * 10) +
-			(app.cars * 5) +
-			(app.trucks * 5);
-
-		app.pedestrian_points = app.pedestrians * 10;
-
-		if (abs(app.vehicle_points - app.pedestrian_points) <= 5) {
-			app.traffic_light = Yellow;
-		} else if (app.pedestrian_points > app.vehicle_points) {
-			app.traffic_light = Red;
-		} else if (app.pedestrian_points < app.vehicle_points) {
-			app.traffic_light = Green;
-		}
-
 		renderTrafficLight(traffic_light_window, app);
 
 		if (cv::waitKey(1) != -1)
@@ -259,40 +243,12 @@ void Detector(YOLO_V8*& car_p, YOLO_V8*& pedestrian_p, sf::RenderWindow& traffic
 	cv::destroyAllWindows();
 }
 
-void Classifier(YOLO_V8*& p)
-{
-	std::random_device rd;
-	std::mt19937 gen(rd());
-	std::uniform_int_distribution<int> dis(0, 255);
-	std::string img_path = std::string(ASSETS) + "/image.jpg";
-	//std::cout << img_path << std::endl;
-	cv::Mat img = cv::imread(img_path);
-	std::vector<DL_RESULT> res;
-	char* ret = p->RunSession(img, res);
-
-	float positionY = 50;
-	for (int i = 0; i < res.size(); i++)
-	{
-		int r = dis(gen);
-		int g = dis(gen);
-		int b = dis(gen);
-		cv::putText(img, std::to_string(i) + ":", cv::Point(10, positionY), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(b, g, r), 2);
-		cv::putText(img, std::to_string(res.at(i).confidence), cv::Point(70, positionY), cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(b, g, r), 2);
-		positionY += 50;
-	}
-
-	cv::imshow("TEST_CLS", img);
-	cv::waitKey(0);
-	cv::destroyAllWindows();
-	//cv::imwrite("E:\\output\\" + std::to_string(k) + ".png", img);
-}
-
 void run(sf::RenderWindow& traffic_light_window, Model& app)
 {
 	YOLO_V8* carsDetector = new YOLO_V8;
 	YOLO_V8* pedestrianDetector = new YOLO_V8;
 	carsDetector->classes = std::vector<std::string> {"auto", "bike", "bus", "car", "truck"};
-	pedestrianDetector->classes = std::vector<std::string> {"person", "paralyzed", "blind"};
+	pedestrianDetector->classes = std::vector<std::string> {"person", "paralyzed", "person"};
 	DL_INIT_PARAM cars_params;
 	DL_INIT_PARAM pedestrian_params;
 	cars_params.rectConfidenceThreshold = 0.37;
@@ -327,6 +283,58 @@ void run(sf::RenderWindow& traffic_light_window, Model& app)
 	Detector(carsDetector, pedestrianDetector, traffic_light_window, app);
 }
 
+void traffic_light_sequence(Model* app) {
+	// waiting
+	std::this_thread::sleep_for(std::chrono::seconds(3));
+
+	while (true) {
+		sf::Clock pedestrianTimer;
+		sf::Clock carTimer;
+		int waitingTime;
+
+		app->vehicle_points =
+			(app->automobiles * 5) +
+			(app->bikes * 5) +
+			(app->buses * 10) +
+			(app->cars * 5) +
+			(app->trucks * 5);
+
+		app->pedestrian_points = app->pedestrians * 10;
+
+		if (abs(app->vehicle_points - app->pedestrian_points) <= 5) {
+			// around the same range
+			waitingTime = 15;
+		} else if (app->pedestrian_points > app->vehicle_points) {
+			waitingTime = 12;
+		} else if (app->pedestrian_points < app->vehicle_points) {
+			waitingTime = 25;
+		} else if (app->pedestrians == 0) {
+			waitingTime = 0;
+		}
+
+		app->traffic_light = Green;
+		std::this_thread::sleep_for(std::chrono::seconds(waitingTime));
+		app->traffic_light = Yellow;
+		std::this_thread::sleep_for(std::chrono::seconds(2));
+
+		if (abs(app->vehicle_points - app->pedestrian_points) <= 5) {
+			// around the same range
+			waitingTime = 15;
+		} else if (app->pedestrian_points > app->vehicle_points) {
+			waitingTime = 25;
+		} else if (app->pedestrian_points < app->vehicle_points) {
+			waitingTime = 12;
+		} else if (app->cars == 0) {
+			waitingTime = 0;
+		}
+
+		app->traffic_light = Red;
+		std::this_thread::sleep_for(std::chrono::seconds(waitingTime));
+
+		app->traffic_light = Yellow;
+		std::this_thread::sleep_for(std::chrono::seconds(2));
+	}
+}
 
 int main()
 {
@@ -337,6 +345,8 @@ int main()
 	app.font = font;
 	sf::Texture texture(std::string(ASSETS) + "/pedestrian-light.jpg");
 	app.texture = texture;
+
+	std::thread traffic_thread(traffic_light_sequence, &app);
 
 	run(traffic_light_window, app);
 
