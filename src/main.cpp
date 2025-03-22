@@ -173,9 +173,6 @@ void Detector(YOLO_V8*& car_p, YOLO_V8*& pedestrian_p, sf::RenderWindow& traffic
 		cv::imshow("Live",frame);
 
 		// pedestrian detect
-		
-		app.pedestrians = 0;
-
 		cv::Mat img = framePedestrian.clone();
 
 		std::vector<DL_RESULT> pedestrian_res;
@@ -187,9 +184,9 @@ void Detector(YOLO_V8*& car_p, YOLO_V8*& pedestrian_p, sf::RenderWindow& traffic
 			std::cout << pedestrian_res.size() << std::endl;
 		}
 
+		app.pedestrians = pedestrian_res.size();
 		for (auto& re : pedestrian_res)
 		{
-			app.pedestrians++;
 			cv::RNG rng(cv::getTickCount());
 			cv::Scalar color(rng.uniform(0, 256), rng.uniform(0, 256), rng.uniform(0, 256));
 
